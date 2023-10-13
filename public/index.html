@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>HTTP клиент + WebSocket сервер</title>
+</head>
+<body>
+  <h1>HTTP клиент + WebSocket сервер</h1>
+  <h2>слова food, news:</h2>
+  <input type="text" id="keyword">
+  <button onclick="sendKeyword()">Отправить</button>
+
+  <h2>Список URL:</h2>
+  <ul id="urlList"></ul>
+
+  <h2>Статус загрузки:</h2>
+  <p id="status"></p>
+
+  <h2>Список загруженного контента:</h2>
+  <select id="contentList" onchange="showSelectedContent()"></select>
+
+  <h2>Выбранный загруженный контент:</h2>
+  <div id="selectedContent"></div>
+
+  <script>
+    const ws = new WebSocket('ws://localhost:8080');
+    const keywordInput = document.getElementById('keyword');
+    const urlList = document.getElementById('urlList');
+    const status = document.getElementById('status');
+    const contentList = document.getElementById('contentList');
+    const selectedContent = document.getElementById('selectedContent');
+
+    ws.onmessage = (event) => {
+      const message = event.data;
+      if (isValidJSON(message)) {
+        const urls = JSON.parse(message);
+        showUrlList(urls);
+      } else {
+        console.log(message);
+      }
+    };
+
+    function isValidJSON(jsonString) {
+      try {
+        JSON.parse(jsonString);
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function showUrlList(urls) {
+      urlList.innerHTML = '';
+      urls.forEach((url) => {
+        const li = document.createElement('li');
+        li.textContent = url;
+        li.onclick = () => downloadContent(url);
+        urlList.appendChild(li);
+      });
+    }
+
+    async function downloadContent(url) {
+      try {
+        // Отправляем запрос на сервер по выбранному URL
+        ws.send(url);
+        showStatus('Загрузка...', 0, 0);
+
+        ws.onmessage = (event) => {
+          const message = event.data;
+          if (isValidJSON(message)) {
+            const progress = JSON.parse(message);
+            const { size, runningThreads, downloadProgress } = progress;
+            showStatus(size, runningThreads, downloadProgress);
+          } else {
+            const content = message;
+            // Сохраняем контент в LocalStorage
+            localStorage.setItem(url, content);
+            showStatus('Загрузка завершена', 0, 0);
+            // Обновляем список загруженного контента
+            showContentList();
+          }
+        };
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    function showStatus(size, runningThreads, downloadProgress) {
+      status.textContent = `Размер: ${size} | Кол-во потоков: ${runningThreads} | Прогресс: ${downloadProgress}%`;
+    }
+
+    function showContentList() {
+      contentList.innerHTML = '';
+      for (let i = 0; i < localStorage.length; i++) {
+        const url = localStorage.key(i);
+        const option = document.createElement('option');
+        option.value = url;
+        option.textContent = url;
+        contentList.appendChild(option);
+      }
+    }
+
+    function showSelectedContent() {
+      const selectedUrl = contentList.value;
+      const content = localStorage.getItem(selectedUrl) || 'Загруженного контента нет';
+      selectedContent.textContent = content;
+    }
+
+    function sendKeyword() {
+      const keyword = keywordInput.value;
+      ws.send(keyword);
+    }
+  </script>
+</body>
+</html>
